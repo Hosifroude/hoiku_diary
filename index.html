@@ -791,6 +791,14 @@
       <span class="settings-label">お名前</span>
       <input type="text" class="settings-input child-name-input" id="childName" placeholder="例：たろう" oninput="saveSettings()">
     </div>
+    <div class="settings-row">
+      <span class="settings-label">誕生日</span>
+      <input type="date" class="settings-input" id="childBirthday" oninput="saveSettings(); updateAge()">
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">年齢</span>
+      <span class="settings-label" id="childAgeDisplay" style="color:var(--brown-dark);font-weight:700;">—</span>
+    </div>
   </div>
   <div class="settings-section">
     <div class="settings-section-title">日記の設定</div>
@@ -928,6 +936,12 @@
     const savedName = localStorage.getItem('hoiku_child_name');
     if (savedName) document.getElementById('childName').value = savedName;
 
+    const savedBirthday = localStorage.getItem('hoiku_child_birthday');
+    if (savedBirthday) {
+      document.getElementById('childBirthday').value = savedBirthday;
+      updateAge();
+    }
+
     const savedTime = localStorage.getItem('hoiku_generate_time');
     if (savedTime) document.getElementById('generateTime').value = savedTime;
 
@@ -954,11 +968,31 @@
     const name = document.getElementById('childName').value;
     const time = document.getElementById('generateTime').value;
     const key = document.getElementById('settingsApiKey').value;
+    const birthday = document.getElementById('childBirthday').value;
     localStorage.setItem('hoiku_child_name', name);
     localStorage.setItem('hoiku_generate_time', time);
+    localStorage.setItem('hoiku_child_birthday', birthday);
     if (key) {
       apiKey = key;
       localStorage.setItem('hoiku_api_key', key);
+    }
+  }
+
+  function updateAge() {
+    const birthday = document.getElementById('childBirthday').value;
+    const display = document.getElementById('childAgeDisplay');
+    if (!birthday) { display.textContent = '—'; return; }
+    const birth = new Date(birthday);
+    const today = new Date();
+    let years = today.getFullYear() - birth.getFullYear();
+    let months = today.getMonth() - birth.getMonth();
+    if (months < 0) { years--; months += 12; }
+    if (today.getDate() < birth.getDate()) months--;
+    if (months < 0) { years--; months += 12; }
+    if (years === 0) {
+      display.textContent = `${months}ヶ月`;
+    } else {
+      display.textContent = `${years}歳${months}ヶ月`;
     }
   }
 
@@ -1057,6 +1091,8 @@
     diaryText.innerHTML = '<div class="loading-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
 
     const childName = document.getElementById('childName').value || 'こども';
+    const ageDisplay = document.getElementById('childAgeDisplay').textContent;
+    const childAge = ageDisplay !== '—' ? `（${ageDisplay}）` : '';
     const today = new Date().toLocaleDateString('ja-JP', {year:'numeric', month:'long', day:'numeric'});
 
     const eventSummary = events.map(ev =>
@@ -1066,7 +1102,7 @@
     const weatherLabels = { sunny:'晴れ', cloudy:'くもり', rainy:'雨', snowy:'雪' };
     const weatherStr = selectedWeather ? `天気：${weatherLabels[selectedWeather]}` : '';
 
-    const prompt = `今日（${today}）の${childName}の保育記録を、保護者が読む連絡帳風の日記にまとめてください。
+    const prompt = `今日（${today}）の${childName}${childAge}の保育記録を、保護者が読む連絡帳風の日記にまとめてください。
 
 ${weatherStr}
 記録：

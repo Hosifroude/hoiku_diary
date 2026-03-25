@@ -216,9 +216,105 @@
 
   .time-row {
     display: flex;
-    gap: 10px;
+    gap: 8px;
+    align-items: flex-start;
   }
-  .time-row .input-group { flex: 1; }
+  .time-row .time-group { flex: 1; min-width: 0; }
+  .time-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-light);
+    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .time-display {
+    width: 100%;
+    padding: 11px 10px;
+    border-radius: 12px;
+    border: 2px solid rgba(139,99,71,0.15);
+    background: white;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+  }
+  .time-display:active { border-color: var(--accent); }
+  .time-display.empty { color: var(--text-light); font-weight: 400; font-size: 13px; }
+  .time-picker-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    align-items: flex-end;
+  }
+  .time-picker-overlay.show { display: flex; }
+  .time-picker-sheet {
+    background: white;
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+    padding: 20px;
+  }
+  .time-picker-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-light);
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .time-picker-selects {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .time-select {
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 2px solid rgba(139,99,71,0.2);
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    background: var(--cream);
+    text-align: center;
+    width: 90px;
+    outline: none;
+  }
+  .time-colon { font-size: 28px; font-weight: 700; color: var(--text); }
+  .time-picker-btns { display: flex; gap: 10px; }
+  .time-picker-btn {
+    flex: 1;
+    padding: 14px;
+    border-radius: 14px;
+    border: none;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .time-picker-btn.cancel { background: var(--warm); color: var(--text); }
+  .time-picker-btn.now { background: var(--brown); color: white; }
+  .time-picker-btn.confirm { background: var(--accent); color: white; }
+  .time-picker-quick { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .time-quick-btn {
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1.5px solid rgba(139,99,71,0.2);
+    background: var(--cream);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--brown-dark);
+    cursor: pointer;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+  }
 
   .add-btn {
     width: 100%;
@@ -604,13 +700,41 @@
   </div>
 
   <div class="time-row">
-    <div class="input-group">
-      <label class="input-label">開始時間</label>
-      <input type="time" class="input-field" id="startTime">
+    <div class="time-group">
+      <span class="time-label">開始時間</span>
+      <div class="time-display empty" id="startTimeDisplay" onclick="openTimePicker('start')">タップして入力</div>
+      <input type="hidden" id="startTime">
     </div>
-    <div class="input-group">
-      <label class="input-label">終了時間（任意）</label>
-      <input type="time" class="input-field" id="endTime">
+    <div class="time-group">
+      <span class="time-label">終了時間（任意）</span>
+      <div class="time-display empty" id="endTimeDisplay" onclick="openTimePicker('end')">タップして入力</div>
+      <input type="hidden" id="endTime">
+    </div>
+  </div>
+
+  <!-- 時刻ピッカー -->
+  <div class="time-picker-overlay" id="timePickerOverlay" onclick="closeTimePicker(event)">
+    <div class="time-picker-sheet">
+      <div class="time-picker-title" id="timePickerTitle">開始時間を入力</div>
+      <div class="time-picker-quick">
+        <button class="time-quick-btn" onclick="setQuickTime(6,0)">6:00</button>
+        <button class="time-quick-btn" onclick="setQuickTime(7,0)">7:00</button>
+        <button class="time-quick-btn" onclick="setQuickTime(8,0)">8:00</button>
+        <button class="time-quick-btn" onclick="setQuickTime(12,0)">12:00</button>
+        <button class="time-quick-btn" onclick="setQuickTime(15,0)">15:00</button>
+        <button class="time-quick-btn" onclick="setQuickTime(18,0)">18:00</button>
+        <button class="time-quick-btn" onclick="setQuickTime(21,0)">21:00</button>
+      </div>
+      <div class="time-picker-selects">
+        <select class="time-select" id="pickerHour"></select>
+        <span class="time-colon">:</span>
+        <select class="time-select" id="pickerMinute"></select>
+      </div>
+      <div class="time-picker-btns">
+        <button class="time-picker-btn cancel" onclick="closeTimePicker()">キャンセル</button>
+        <button class="time-picker-btn now" onclick="setPickerNow()">現在時刻</button>
+        <button class="time-picker-btn confirm" onclick="confirmTime()">決定</button>
+      </div>
     </div>
   </div>
 
@@ -707,6 +831,65 @@
   let selectedWeather = null;
 
   // 初期化
+  let currentPickerTarget = 'start';
+
+  function openTimePicker(target) {
+    currentPickerTarget = target;
+    const title = document.getElementById('timePickerTitle');
+    title.textContent = target === 'start' ? '開始時間を入力' : '終了時間を入力';
+
+    // セレクトボックスの選択肢を生成
+    const hourSel = document.getElementById('pickerHour');
+    const minSel = document.getElementById('pickerMinute');
+    if (hourSel.options.length === 0) {
+      for (let h = 0; h < 24; h++) hourSel.add(new Option(String(h).padStart(2,'0'), h));
+      for (let m = 0; m < 60; m += 5) minSel.add(new Option(String(m).padStart(2,'0'), m));
+    }
+
+    // 現在の値があればそれをセット、なければ現在時刻
+    const existing = document.getElementById(target === 'start' ? 'startTime' : 'endTime').value;
+    if (existing) {
+      const [h, m] = existing.split(':');
+      hourSel.value = parseInt(h);
+      minSel.value = Math.floor(parseInt(m) / 5) * 5;
+    } else {
+      setPickerNow();
+    }
+
+    document.getElementById('timePickerOverlay').classList.add('show');
+  }
+
+  function setPickerNow() {
+    const now = new Date();
+    const h = now.getHours();
+    const m = Math.floor(now.getMinutes() / 5) * 5;
+    document.getElementById('pickerHour').value = h;
+    document.getElementById('pickerMinute').value = m;
+  }
+
+  function setQuickTime(h, m) {
+    document.getElementById('pickerHour').value = h;
+    document.getElementById('pickerMinute').value = m;
+  }
+
+  function confirmTime() {
+    const h = String(document.getElementById('pickerHour').value).padStart(2,'0');
+    const m = String(document.getElementById('pickerMinute').value).padStart(2,'0');
+    const timeStr = `${h}:${m}`;
+    const hiddenId = currentPickerTarget === 'start' ? 'startTime' : 'endTime';
+    const displayId = currentPickerTarget === 'start' ? 'startTimeDisplay' : 'endTimeDisplay';
+    document.getElementById(hiddenId).value = timeStr;
+    const disp = document.getElementById(displayId);
+    disp.textContent = timeStr;
+    disp.classList.remove('empty');
+    closeTimePicker();
+  }
+
+  function closeTimePicker(e) {
+    if (e && e.target !== document.getElementById('timePickerOverlay')) return;
+    document.getElementById('timePickerOverlay').classList.remove('show');
+  }
+
   function selectWeather(btn) {
     document.querySelectorAll('.weather-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
@@ -718,7 +901,7 @@
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0');
     const mm = String(now.getMinutes()).padStart(2,'0');
-    document.getElementById('startTime').value = `${hh}:${mm}`;
+    // 時刻は独自ピッカーで入力するため初期値セット不要
 
     const dateStr = now.toLocaleDateString('ja-JP', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
     document.getElementById('headerDate').textContent = dateStr;
@@ -821,7 +1004,12 @@
 
     // リセット
     document.getElementById('memoInput').value = '';
+    document.getElementById('startTime').value = '';
     document.getElementById('endTime').value = '';
+    document.getElementById('startTimeDisplay').textContent = 'タップして入力';
+    document.getElementById('startTimeDisplay').classList.add('empty');
+    document.getElementById('endTimeDisplay').textContent = 'タップして入力';
+    document.getElementById('endTimeDisplay').classList.add('empty');
     showToast('記録しました！');
     switchTab('list');
   }

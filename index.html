@@ -98,7 +98,7 @@
     background: var(--warm);
     border-bottom: 2px solid rgba(139,99,71,0.15);
     position: sticky;
-    top: 72px;
+    top: 0px;
     z-index: 99;
   }
   .tab {
@@ -524,7 +524,7 @@
 </head>
 <body>
 
-<div class="header">
+<div class="header" id="mainHeader">
   <div style="flex:1">
     <div style="display:flex;align-items:center;justify-content:space-between;">
       <div class="header-title">📒 ほいくにっき</div>
@@ -750,6 +750,12 @@
 
     renderEvents();
     checkAutoGenerate();
+
+    // タブバーをヘッダーの直下に固定
+    const header = document.getElementById('mainHeader');
+    const tabs = document.querySelector('.tabs');
+    const headerHeight = header.offsetHeight;
+    tabs.style.top = headerHeight + 'px';
   }
 
   function toDateKey(d) {

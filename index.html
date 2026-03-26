@@ -596,6 +596,26 @@
     text-align: left;
   }
 
+  .sync-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    margin-left: 8px;
+  }
+  .sync-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #7fff7f;
+  }
+  .sync-dot.syncing {
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
   .toast {
     position: fixed;
     bottom: 30px;
@@ -626,7 +646,13 @@
       <div class="header-title">📒 ほいくにっき</div>
       <button class="settings-btn" onclick="switchTab('settings')">⚙️</button>
     </div>
-    <div class="header-date" id="headerDate"></div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <div class="header-date" id="headerDate"></div>
+      <span class="sync-indicator" id="syncIndicator" style="display:none">
+        <span class="sync-dot" id="syncDot"></span>
+        <span id="syncText">同期中</span>
+      </span>
+    </div>
     <div class="weather-row">
       <button class="weather-btn" data-weather="sunny" onclick="selectWeather(this)">☀️ 晴れ</button>
       <button class="weather-btn" data-weather="cloudy" onclick="selectWeather(this)">☁️ くもり</button>
@@ -748,6 +774,9 @@
 
 <!-- 一覧画面 -->
 <div class="screen" id="screen-list">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+    <button onclick="loadEventsFromGAS()" style="background:var(--warm);border:none;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:700;color:var(--brown-dark);cursor:pointer;font-family:'Zen Kaku Gothic New',sans-serif;">🔄 最新を取得</button>
+  </div>
   <div id="eventList">
     <div class="empty-state">
       <div class="big">📝</div>
@@ -819,7 +848,9 @@
 <div class="toast" id="toast"></div>
 
 <script>
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyeD0h0Ijwib9wRgGjTsXF_7tcJkimZ3Xz_KfY5Te1AfoPGUMMHLhheCdqB--fpa1k/exec';
   let events = [];
+  let isSyncing = false;
   let selectedCategory = null;
   let apiKey = '';
 
@@ -915,9 +946,8 @@
     document.getElementById('headerDate').textContent = dateStr;
     document.getElementById('diaryDateLabel').textContent = dateStr + 'の日記';
 
-    // ローカルストレージから復元
-    const saved = localStorage.getItem('hoiku_events_' + toDateKey(now));
-    if (saved) events = JSON.parse(saved);
+    // GASからイベントを読み込む
+    loadEventsFromGAS();
 
     const savedWeather = localStorage.getItem('hoiku_weather_' + toDateKey(now));
     if (savedWeather) {
@@ -960,8 +990,77 @@
   }
 
   function saveEvents() {
+    // ローカルにもバックアップ保存
     const key = 'hoiku_events_' + toDateKey(new Date());
     localStorage.setItem(key, JSON.stringify(events));
+  }
+
+  function showSync(text) {
+    const indicator = document.getElementById('syncIndicator');
+    const dot = document.getElementById('syncDot');
+    const txt = document.getElementById('syncText');
+    indicator.style.display = 'inline-flex';
+    dot.classList.add('syncing');
+    txt.textContent = text;
+  }
+
+  function hideSync() {
+    const indicator = document.getElementById('syncIndicator');
+    const dot = document.getElementById('syncDot');
+    indicator.style.display = 'none';
+    dot.classList.remove('syncing');
+  }
+
+  async function loadEventsFromGAS() {
+    showSync('読み込み中');
+    const dateKey = toDateKey(new Date());
+    // まずローカルから表示
+    const saved = localStorage.getItem('hoiku_events_' + dateKey);
+    if (saved) { events = JSON.parse(saved); renderEvents(); }
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getAll', date: dateKey })
+      });
+      const json = await res.json();
+      if (json.status === 'ok') {
+        events = json.data.sort((a,b) => String(a.start).localeCompare(String(b.start)));
+        saveEvents();
+        renderEvents();
+        hideSync();
+      }
+    } catch(e) {
+      hideSync();
+      showToast('オフライン：ローカルデータを表示中');
+    }
+  }
+
+  async function saveEventToGAS(ev) {
+    showSync('保存中');
+    const dateKey = toDateKey(new Date());
+    try {
+      await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'save', event: { ...ev, date: dateKey } })
+      });
+      hideSync();
+    } catch(e) {
+      hideSync();
+      showToast('同期失敗：ローカルに保存しました');
+    }
+  }
+
+  async function deleteEventFromGAS(id) {
+    showSync('削除中');
+    try {
+      await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'delete', id: String(id) })
+      });
+      hideSync();
+    } catch(e) {
+      hideSync();
+    }
   }
 
   function saveSettings() {
@@ -1035,6 +1134,7 @@
     events.sort((a,b) => a.start.localeCompare(b.start));
     saveEvents();
     renderEvents();
+    saveEventToGAS(ev);
 
     // リセット
     document.getElementById('memoInput').value = '';
@@ -1052,6 +1152,7 @@
     events = events.filter(e => e.id !== id);
     saveEvents();
     renderEvents();
+    deleteEventFromGAS(id);
     showToast('削除しました');
   }
 

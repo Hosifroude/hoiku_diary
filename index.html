@@ -1011,6 +1011,14 @@
     dot.classList.remove('syncing');
   }
 
+  function formatTime(val) {
+    if (!val) return '';
+    const s = String(val).trim();
+    // 「6:00」→「06:00」に正規化
+    if (/^\d:\d{2}$/.test(s)) return '0' + s;
+    return s;
+  }
+
   async function loadEventsFromGAS() {
     showSync('読み込み中');
     const dateKey = toDateKey(new Date());
@@ -1024,7 +1032,12 @@
       });
       const json = await res.json();
       if (json.status === 'ok') {
-        events = json.data.sort((a,b) => String(a.start).localeCompare(String(b.start)));
+        events = json.data.map(ev => ({
+          ...ev,
+          start: formatTime(ev.start),
+          end:   formatTime(ev.end),
+          memo:  String(ev.memo || '')
+        })).sort((a,b) => a.start.localeCompare(b.start));
         saveEvents();
         renderEvents();
         hideSync();

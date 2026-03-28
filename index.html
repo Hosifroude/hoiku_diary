@@ -851,6 +851,7 @@
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbyeD0h0Ijwib9wRgGjTsXF_7tcJkimZ3Xz_KfY5Te1AfoPGUMMHLhheCdqB--fpa1k/exec';
   let events = [];
   let isSyncing = false;
+  let syncQueue = JSON.parse(localStorage.getItem('hoiku_sync_queue') || '[]');
   let selectedCategory = null;
   let apiKey = '';
 
@@ -978,6 +979,16 @@
     renderEvents();
     checkAutoGenerate();
 
+    // 電波が戻ったらキューを自動送信
+    window.addEventListener('online', () => {
+      showToast('電波が回復しました');
+      processQueue();
+    });
+    // 起動時にキューが残っていたら送信
+    if (syncQueue.length > 0 && navigator.onLine) {
+      processQueue();
+    }
+
     // タブバーをヘッダーの直下に固定
     const header = document.getElementById('mainHeader');
     const tabs = document.querySelector('.tabs');
@@ -1048,31 +1059,57 @@
     }
   }
 
+  function saveQueueToStorage() {
+    localStorage.setItem('hoiku_sync_queue', JSON.stringify(syncQueue));
+  }
+
+  async function processQueue() {
+    if (syncQueue.length === 0) return;
+    showSync('再送信中');
+    const remaining = [];
+    for (const task of syncQueue) {
+      try {
+        await fetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify(task)
+        });
+      } catch(e) {
+        remaining.push(task); // 失敗したらキューに残す
+      }
+    }
+    syncQueue = remaining;
+    saveQueueToStorage();
+    hideSync();
+    if (syncQueue.length === 0 && remaining.length === 0) {
+      showToast('同期完了！');
+    }
+  }
+
   async function saveEventToGAS(ev) {
     showSync('保存中');
     const dateKey = toDateKey(new Date());
+    const task = { action: 'save', event: { ...ev, date: dateKey } };
     try {
-      await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'save', event: { ...ev, date: dateKey } })
-      });
+      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
       hideSync();
     } catch(e) {
       hideSync();
-      showToast('同期失敗：ローカルに保存しました');
+      syncQueue.push(task);
+      saveQueueToStorage();
+      showToast('オフライン：電波が戻ったら自動送信します');
     }
   }
 
   async function deleteEventFromGAS(id) {
     showSync('削除中');
+    const task = { action: 'delete', id: String(id) };
     try {
-      await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'delete', id: String(id) })
-      });
+      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
       hideSync();
     } catch(e) {
       hideSync();
+      syncQueue.push(task);
+      saveQueueToStorage();
     }
   }
 

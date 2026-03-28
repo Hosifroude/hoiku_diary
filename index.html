@@ -935,16 +935,7 @@
       <span class="date-nav-label" id="dateNavLabel"></span>
       <button class="date-nav-btn" onclick="changeMonth(1)">›</button>
     </div>
-    <div class="date-grid">
-      <div class="date-grid-header">日</div>
-      <div class="date-grid-header">月</div>
-      <div class="date-grid-header">火</div>
-      <div class="date-grid-header">水</div>
-      <div class="date-grid-header">木</div>
-      <div class="date-grid-header">金</div>
-      <div class="date-grid-header">土</div>
-    </div>
-    <div id="dateGrid"></div>
+    <div class="date-grid" id="dateGrid"></div>
     <div class="date-picker-btns">
       <button class="date-picker-btn cancel" onclick="closeDatePicker()">キャンセル</button>
       <button class="date-picker-btn today-btn" onclick="selectToday()">今日</button>
@@ -1076,7 +1067,10 @@
     const todayKey = toDateKey(today);
     const selectedKey = toDateKey(currentDate);
 
-    let html = '';
+    // 曜日ヘッダーも同じgridに含める
+    const days = ['日','月','火','水','木','金','土'];
+    let html = days.map(d => `<div class="date-grid-header">${d}</div>`).join('');
+
     let day = 1;
     for (let i = 0; i < 6; i++) {
       for (let j = 0; j < 7; j++) {
@@ -1115,24 +1109,61 @@
       const wBtn = document.querySelector(`.weather-btn[data-weather="${savedWeather}"]`);
       if (wBtn) wBtn.classList.add('selected');
     }
-    // 日記の復元
-    const savedDiary = localStorage.getItem('hoiku_diary_' + toDateKey(currentDate));
-    if (savedDiary) {
-      try {
-        const { text } = JSON.parse(savedDiary);
-        document.getElementById('diaryText').textContent = text;
-        document.getElementById('diaryOutput').classList.add('visible');
-      } catch(e) {}
-    } else {
-      document.getElementById('diaryText').textContent = '';
-      document.getElementById('diaryOutput').classList.remove('visible');
-    }
     closeDatePicker();
     loadEventsFromGAS();
+    // 日記の読み込み（ローカル優先→GASから取得）
+    loadDiaryForDate(toDateKey(currentDate));
   }
 
   function selectToday() {
     selectDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  }
+
+  async function loadDiaryForDate(dateKey) {
+    const diaryOutput = document.getElementById('diaryOutput');
+    const diaryTextEl = document.getElementById('diaryText');
+    const timeline = document.getElementById('diaryTimeline');
+
+    // まずローカルから表示
+    const savedDiary = localStorage.getItem('hoiku_diary_' + dateKey);
+    if (savedDiary) {
+      try {
+        const { text, timeline: tl } = JSON.parse(savedDiary);
+        renderDiaryDisplay(text, tl);
+        return;
+      } catch(e) {}
+    }
+
+    // ローカルになければGASから取得
+    const gasData = await loadDiaryFromGAS(dateKey);
+    if (gasData) {
+      localStorage.setItem('hoiku_diary_' + dateKey, JSON.stringify(gasData));
+      renderDiaryDisplay(gasData.text, gasData.timeline);
+    } else {
+      diaryTextEl.textContent = '';
+      timeline.innerHTML = '';
+      diaryOutput.classList.remove('visible');
+    }
+  }
+
+  function renderDiaryDisplay(text, timelineData) {
+    const diaryOutput = document.getElementById('diaryOutput');
+    const diaryTextEl = document.getElementById('diaryText');
+    const timeline = document.getElementById('diaryTimeline');
+    diaryOutput.classList.add('visible');
+    diaryTextEl.textContent = text;
+    if (timelineData && timelineData.length > 0) {
+      timeline.innerHTML = timelineData.map(ev => {
+        const timeStr = (ev.start || '') + (ev.end ? '〜' + ev.end : '');
+        const label = catLabels[ev.category] || ev.category;
+        const icon = catIcons[ev.category] || '';
+        const memo = ev.memo ? '　' + ev.memo : '';
+        return `<div class="diary-timeline-item">
+          <span class="diary-timeline-time">${timeStr}</span>
+          <span class="diary-timeline-event">${icon} ${label}${memo}</span>
+        </div>`;
+      }).join('');
+    }
   }
 
   function selectWeather(btn) {
@@ -1263,6 +1294,29 @@
 
   function saveQueueToStorage() {
     localStorage.setItem('hoiku_sync_queue', JSON.stringify(syncQueue));
+  }
+
+  async function saveDiaryToGAS(dateKey, diaryData) {
+    try {
+      await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'saveDiary', date: dateKey, diary: diaryData })
+      });
+    } catch(e) {
+      // 失敗してもローカルには保存済みなので無視
+    }
+  }
+
+  async function loadDiaryFromGAS(dateKey) {
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getDiary', date: dateKey })
+      });
+      const json = await res.json();
+      if (json.status === 'ok' && json.data) return json.data;
+    } catch(e) {}
+    return null;
   }
 
   async function processQueue() {
@@ -1440,7 +1494,7 @@
     const diaryText = document.getElementById('diaryText');
 
     btn.disabled = true;
-    btn.textContent = '生成中...';
+    btn.textContent = '✨ 生成中...';
     output.classList.add('visible');
     document.getElementById('diaryTimeline').innerHTML = '';
     diaryText.innerHTML = '<div class="loading-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
@@ -1448,7 +1502,7 @@
     const childName = document.getElementById('childName').value || 'こども';
     const ageDisplay = document.getElementById('childAgeDisplay').textContent;
     const childAge = ageDisplay !== '—' ? `（${ageDisplay}）` : '';
-    const today = new Date().toLocaleDateString('ja-JP', {year:'numeric', month:'long', day:'numeric'});
+    const today = currentDate.toLocaleDateString('ja-JP', {year:'numeric', month:'long', day:'numeric'});
 
     const eventSummary = events.map(ev =>
       `【${catLabels[ev.category]}】${ev.start}${ev.end ? '〜'+ev.end : ''} : ${ev.memo}`
@@ -1488,28 +1542,24 @@ ${eventSummary}
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);
       const text = data.content[0].text;
-      diaryText.textContent = text;
+      const diaryData = { text, timeline: events };
 
-      // タイムライン描画
-      const timeline = document.getElementById('diaryTimeline');
-      timeline.innerHTML = events.map(ev => {
-        const timeStr = ev.start + (ev.end ? '〜' + ev.end : '');
-        const label = catLabels[ev.category] || ev.category;
-        const icon = catIcons[ev.category] || '';
-        const memo = ev.memo ? '　' + ev.memo : '';
-        return `<div class="diary-timeline-item">
-          <span class="diary-timeline-time">${timeStr}</span>
-          <span class="diary-timeline-event">${icon} ${label}${memo}</span>
-        </div>`;
-      }).join('');
+      // ローカルに保存
+      const dateKey = toDateKey(currentDate);
+      localStorage.setItem('hoiku_diary_' + dateKey, JSON.stringify(diaryData));
 
-      localStorage.setItem('hoiku_diary_' + toDateKey(currentDate), JSON.stringify({ timeline: events, text }));
+      // GASに保存（同期）
+      saveDiaryToGAS(dateKey, diaryData);
+
+      // 統一された描画関数で表示
+      renderDiaryDisplay(text, events);
     } catch (e) {
       diaryText.textContent = 'エラーが発生しました：' + e.message;
     }
 
     btn.disabled = false;
     btn.textContent = '✨ 今日の日記を生成する';
+    document.getElementById('diaryDateLabel').textContent = currentDate.toLocaleDateString('ja-JP', {year:'numeric', month:'long', day:'numeric', weekday:'short'}) + 'の日記';
   }
 
   function copyDiary() {

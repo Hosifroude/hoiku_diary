@@ -1161,12 +1161,15 @@
     switchTab('list');
   }
 
-  function deleteEvent(id) {
+  async function deleteEvent(id) {
+    // 先にローカルから削除して画面を更新
     events = events.filter(e => e.id !== id);
     saveEvents();
     renderEvents();
-    deleteEventFromGAS(id);
     showToast('削除しました');
+    // GASから削除してから最新を取得
+    await deleteEventFromGAS(id);
+    await loadEventsFromGAS();
   }
 
   function renderEvents() {

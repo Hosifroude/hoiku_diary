@@ -925,6 +925,17 @@
       <input type="password" class="settings-input" id="settingsApiKey" placeholder="sk-ant-..." oninput="saveSettings()">
     </div>
   </div>
+  <div class="settings-section">
+    <div class="settings-section-title">同期設定</div>
+    <div class="settings-row">
+      <span class="settings-label">GAS ID</span>
+      <input type="text" class="settings-input" id="settingsGasUrl" placeholder="AKfycb..." oninput="saveSettings()">
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">同期パスワード</span>
+      <input type="password" class="settings-input" id="settingsGasPassword" placeholder="パスワード" oninput="saveSettings()">
+    </div>
+  </div>
 </div>
 
 <div class="date-picker-overlay" id="datePickerOverlay" onclick="closeDatePickerOverlay(event)">
@@ -947,6 +958,7 @@
 
 <script>
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbyeD0h0Ijwib9wRgGjTsXF_7tcJkimZ3Xz_KfY5Te1AfoPGUMMHLhheCdqB--fpa1k/exec';
+  const GAS_PASSWORD = 'Sosuke2024';
   let events = [];
   let isSyncing = false;
   let syncQueue = JSON.parse(localStorage.getItem('hoiku_sync_queue') || '[]');
@@ -1197,6 +1209,18 @@
       document.getElementById('settingsApiKey').value = savedKey;
     }
 
+    const savedGasUrl = localStorage.getItem('hoiku_gas_url');
+    if (savedGasUrl) {
+      GAS_URL = 'https://script.google.com/macros/s/' + savedGasUrl + '/exec';
+      document.getElementById('settingsGasUrl').value = savedGasUrl;
+    }
+
+    const savedGasPass = localStorage.getItem('hoiku_gas_password');
+    if (savedGasPass) {
+      GAS_PASSWORD = savedGasPass;
+      document.getElementById('settingsGasPassword').value = savedGasPass;
+    }
+
     const savedName = localStorage.getItem('hoiku_child_name');
     if (savedName) document.getElementById('childName').value = savedName;
 
@@ -1264,6 +1288,7 @@
   }
 
   async function loadEventsFromGAS() {
+    if (!GAS_URL) { showToast('設定画面でGAS URLを入力してください'); return; }
     showSync('読み込み中');
     const dateKey = toDateKey(currentDate);
     // まずローカルから表示
@@ -1272,7 +1297,7 @@
     try {
       const res = await fetch(GAS_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'getAll', date: dateKey })
+        body: JSON.stringify({ action: 'getAll', date: dateKey, password: GAS_PASSWORD })
       });
       const json = await res.json();
       if (json.status === 'ok') {
@@ -1300,7 +1325,7 @@
     try {
       await fetch(GAS_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'saveDiary', date: dateKey, diary: diaryData })
+        body: JSON.stringify({ action: 'saveDiary', date: dateKey, diary: diaryData, password: GAS_PASSWORD })
       });
     } catch(e) {
       // 失敗してもローカルには保存済みなので無視
@@ -1311,7 +1336,7 @@
     try {
       const res = await fetch(GAS_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'getDiary', date: dateKey })
+        body: JSON.stringify({ action: 'getDiary', date: dateKey, password: GAS_PASSWORD })
       });
       const json = await res.json();
       if (json.status === 'ok' && json.data) return json.data;
@@ -1344,7 +1369,7 @@
   async function saveEventToGAS(ev) {
     showSync('保存中');
     const dateKey = toDateKey(currentDate);
-    const task = { action: 'save', event: { ...ev, date: dateKey } };
+    const task = { action: 'save', event: { ...ev, date: dateKey }, password: GAS_PASSWORD };
     try {
       await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
       hideSync();
@@ -1358,7 +1383,7 @@
 
   async function deleteEventFromGAS(id) {
     showSync('削除中');
-    const task = { action: 'delete', id: String(id) };
+    const task = { action: 'delete', id: String(id), password: GAS_PASSWORD };
     try {
       await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
       hideSync();
@@ -1374,12 +1399,23 @@
     const time = document.getElementById('generateTime').value;
     const key = document.getElementById('settingsApiKey').value;
     const birthday = document.getElementById('childBirthday').value;
+    const gasUrl = document.getElementById('settingsGasUrl').value;
+    const gasPass = document.getElementById('settingsGasPassword').value;
     localStorage.setItem('hoiku_child_name', name);
     localStorage.setItem('hoiku_generate_time', time);
     localStorage.setItem('hoiku_child_birthday', birthday);
     if (key) {
       apiKey = key;
       localStorage.setItem('hoiku_api_key', key);
+    }
+    if (gasUrl) {
+      // IDだけ保存して、URLはIDから組み立てる
+      GAS_URL = 'https://script.google.com/macros/s/' + gasUrl + '/exec';
+      localStorage.setItem('hoiku_gas_url', gasUrl);
+    }
+    if (gasPass) {
+      GAS_PASSWORD = gasPass;
+      localStorage.setItem('hoiku_gas_password', gasPass);
     }
   }
 

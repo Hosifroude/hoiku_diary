@@ -1344,6 +1344,7 @@
 
   async function saveDayLockToGAS(dateKey, locked) {
     const task = { action: 'setLock', date: dateKey, locked, password: GAS_PASSWORD };
+    queueTask(task);
     try {
       const res = await fetch(GAS_URL, {
         method: 'POST',
@@ -1351,10 +1352,9 @@
       });
       const json = await res.json();
       if (json.status !== 'ok') throw new Error(json.message || 'lock sync failed');
+      removeQueuedTask(task);
       return true;
     } catch(e) {
-      syncQueue.push(task);
-      saveQueueToStorage();
       showToast('固定状態はあとで自動同期します');
       return false;
     }
@@ -1478,15 +1478,19 @@
       });
       const json = await res.json();
       if (json.status === 'ok') {
-        events = json.data.map(ev => ({
+        const gasEvents = json.data.map(ev => ({
           ...ev,
           start: formatTime(ev.start),
           end:   formatTime(ev.end),
           memo:  String(ev.memo || '')
-        })).sort((a,b) => a.start.localeCompare(b.start));
+        }));
+        events = (directFromGas ? gasEvents : mergePendingEvents(dateKey, gasEvents))
+          .sort((a,b) => a.start.localeCompare(b.start));
         if (!directFromGas) saveEvents();
         renderEvents();
         hideSync();
+      } else {
+        throw new Error(json.message || 'load failed');
       }
     } catch(e) {
       hideSync();
@@ -1496,6 +1500,49 @@
 
   function saveQueueToStorage() {
     localStorage.setItem('hoiku_sync_queue', JSON.stringify(syncQueue));
+  }
+
+  function getTaskKey(task) {
+    if (task.action === 'save' && task.event) return 'save:' + String(task.event.id);
+    if (task.action === 'delete') return 'delete:' + String(task.id);
+    if (task.action === 'setLock') return 'setLock:' + String(task.date);
+    return JSON.stringify(task);
+  }
+
+  function queueTask(task) {
+    const key = getTaskKey(task);
+    if (task.action === 'delete') {
+      const saveKey = 'save:' + String(task.id);
+      syncQueue = syncQueue.filter(t => getTaskKey(t) !== key && getTaskKey(t) !== saveKey);
+    } else {
+      syncQueue = syncQueue.filter(t => getTaskKey(t) !== key);
+    }
+    syncQueue.push(task);
+    saveQueueToStorage();
+  }
+
+  function removeQueuedTask(task) {
+    const key = getTaskKey(task);
+    syncQueue = syncQueue.filter(t => getTaskKey(t) !== key);
+    saveQueueToStorage();
+  }
+
+  function mergePendingEvents(dateKey, gasEvents) {
+    const byId = new Map(gasEvents.map(ev => [String(ev.id), ev]));
+    for (const task of syncQueue) {
+      if (task.action === 'save' && task.event && String(task.event.date) === String(dateKey)) {
+        byId.set(String(task.event.id), {
+          ...task.event,
+          start: formatTime(task.event.start),
+          end: formatTime(task.event.end),
+          memo: String(task.event.memo || '')
+        });
+      }
+      if (task.action === 'delete' && String(task.date) === String(dateKey)) {
+        byId.delete(String(task.id));
+      }
+    }
+    return Array.from(byId.values());
   }
 
   async function saveDiaryToGAS(dateKey, diaryData) {
@@ -1527,10 +1574,14 @@
     const remaining = [];
     for (const task of syncQueue) {
       try {
-        await fetch(GAS_URL, {
+        const res = await fetch(GAS_URL, {
           method: 'POST',
           body: JSON.stringify(task)
         });
+        const json = await res.json();
+        if (json.status !== 'ok' && json.message !== 'locked') {
+          remaining.push(task);
+        }
       } catch(e) {
         remaining.push(task); // 失敗したらキューに残す
       }
@@ -1546,15 +1597,17 @@
   async function saveEventToGAS(ev) {
     if (isDayLocked) return;
     showSync('保存中');
-    const dateKey = toDateKey(currentDate);
+    const dateKey = ev.date || toDateKey(currentDate);
     const task = { action: 'save', event: { ...ev, date: dateKey }, password: GAS_PASSWORD };
+    queueTask(task);
     try {
-      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
+      const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
+      const json = await res.json();
+      if (json.status !== 'ok') throw new Error(json.message || 'save failed');
+      removeQueuedTask(task);
       hideSync();
     } catch(e) {
       hideSync();
-      syncQueue.push(task);
-      saveQueueToStorage();
       showToast('オフライン：電波が戻ったら自動送信します');
     }
   }
@@ -1562,14 +1615,16 @@
   async function deleteEventFromGAS(id) {
     if (isDayLocked) return;
     showSync('削除中');
-    const task = { action: 'delete', id: String(id), password: GAS_PASSWORD };
+    const task = { action: 'delete', id: String(id), date: toDateKey(currentDate), password: GAS_PASSWORD };
+    queueTask(task);
     try {
-      await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
+      const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(task) });
+      const json = await res.json();
+      if (json.status !== 'ok') throw new Error(json.message || 'delete failed');
+      removeQueuedTask(task);
       hideSync();
     } catch(e) {
       hideSync();
-      syncQueue.push(task);
-      saveQueueToStorage();
     }
   }
 
@@ -1646,9 +1701,11 @@
     const start = document.getElementById('startTime').value;
     const end = document.getElementById('endTime').value;
     const memo = document.getElementById('memoInput').value.trim();
+    const dateKey = toDateKey(currentDate);
 
     const ev = {
       id: Date.now(),
+      date: dateKey,
       category: selectedCategory,
       start, end, memo,
       time: new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'})
@@ -1674,7 +1731,7 @@
   function deleteEvent(id) {
     if (isDayLocked) { showToast('固定中です。変更するには「変更する」を押してください'); return; }
     // ローカルから即座に削除して画面を更新
-    events = events.filter(e => e.id !== id);
+    events = events.filter(e => String(e.id) !== String(id));
     saveEvents();
     renderEvents();
     showToast('削除しました');

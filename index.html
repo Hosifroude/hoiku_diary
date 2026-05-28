@@ -899,7 +899,7 @@
 <!-- 一覧画面 -->
 <div class="screen" id="screen-list">
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-    <button onclick="loadEventsFromGAS()" style="background:var(--warm);border:none;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:700;color:var(--brown-dark);cursor:pointer;font-family:'Zen Kaku Gothic New',sans-serif;">🔄 最新を取得</button>
+    <button onclick="refreshCurrentDateFromGAS()" style="background:var(--warm);border:none;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:700;color:var(--brown-dark);cursor:pointer;font-family:'Zen Kaku Gothic New',sans-serif;">🔄 最新を取得</button>
   </div>
   <div id="eventList">
     <div class="empty-state">
@@ -1158,7 +1158,7 @@
     document.getElementById('dateGrid').innerHTML = html;
   }
 
-  function selectDate(year, month, day) {
+  async function selectDate(year, month, day) {
     currentDate = new Date(year, month, day);
     updateDateDisplay();
     updateLockUI();
@@ -1172,9 +1172,7 @@
       if (wBtn) wBtn.classList.add('selected');
     }
     closeDatePicker();
-    loadEventsFromGAS(isDayLocked);
-    // 日記の読み込み（ローカル優先→GASから取得）
-    loadDiaryForDate(toDateKey(currentDate));
+    await refreshCurrentDateFromGAS();
   }
 
   function selectToday() {
@@ -1239,7 +1237,7 @@
     localStorage.setItem('hoiku_weather_' + toDateKey(currentDate), selectedWeather);
   }
 
-  function init() {
+  async function init() {
     const now = new Date();
     // 時刻は独自ピッカーで入力するため初期値セット不要
 
@@ -1285,10 +1283,6 @@
     const savedTime = localStorage.getItem('hoiku_generate_time');
     if (savedTime) document.getElementById('generateTime').value = savedTime;
 
-    // 設定復元後にGASからイベント・日記を読み込む
-    loadEventsFromGAS(isDayLocked);
-    loadDiaryForDate(toDateKey(currentDate));
-
     renderEvents();
     checkAutoGenerate();
 
@@ -1307,6 +1301,9 @@
     const tabs = document.querySelector('.tabs');
     const headerHeight = header.offsetHeight;
     tabs.style.top = headerHeight + 'px';
+
+    // 設定復元後に固定状態を先に読み、その状態に合わせてイベント・日記を読み込む
+    await refreshCurrentDateFromGAS();
   }
 
   function toDateKey(d) {
@@ -1319,6 +1316,64 @@
 
   function isDayLockedForDate(dateKey = toDateKey(currentDate)) {
     return localStorage.getItem(dayLockKey(dateKey)) === 'true';
+  }
+
+  function setLocalDayLock(dateKey, locked) {
+    if (locked) {
+      localStorage.setItem(dayLockKey(dateKey), 'true');
+    } else {
+      localStorage.removeItem(dayLockKey(dateKey));
+    }
+  }
+
+  async function loadDayLockFromGAS(dateKey) {
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getLock', date: dateKey, password: GAS_PASSWORD })
+      });
+      const json = await res.json();
+      if (json.status === 'ok') {
+        const locked = json.data === true || String(json.data).toLowerCase() === 'true';
+        setLocalDayLock(dateKey, locked);
+        return locked;
+      }
+    } catch(e) {}
+    return isDayLockedForDate(dateKey);
+  }
+
+  async function saveDayLockToGAS(dateKey, locked) {
+    const task = { action: 'setLock', date: dateKey, locked, password: GAS_PASSWORD };
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(task)
+      });
+      const json = await res.json();
+      if (json.status !== 'ok') throw new Error(json.message || 'lock sync failed');
+      return true;
+    } catch(e) {
+      syncQueue.push(task);
+      saveQueueToStorage();
+      showToast('固定状態はあとで自動同期します');
+      return false;
+    }
+  }
+
+  async function refreshDayLock(dateKey = toDateKey(currentDate)) {
+    const locked = await loadDayLockFromGAS(dateKey);
+    if (dateKey === toDateKey(currentDate)) {
+      isDayLocked = locked;
+      updateLockUI();
+    }
+    return locked;
+  }
+
+  async function refreshCurrentDateFromGAS() {
+    const dateKey = toDateKey(currentDate);
+    await refreshDayLock(dateKey);
+    loadEventsFromGAS(isDayLocked);
+    loadDiaryForDate(dateKey);
   }
 
   function updateLockUI() {
@@ -1356,8 +1411,9 @@
   async function toggleDayLock() {
     const dateKey = toDateKey(currentDate);
     if (isDayLockedForDate(dateKey)) {
-      localStorage.removeItem(dayLockKey(dateKey));
+      setLocalDayLock(dateKey, false);
       updateLockUI();
+      await saveDayLockToGAS(dateKey, false);
       showToast('編集できるようにしました');
       return;
     }
@@ -1368,8 +1424,9 @@
       localStorage.setItem('hoiku_diary_' + dateKey, JSON.stringify(diaryData));
       await saveDiaryToGAS(dateKey, diaryData);
     }
-    localStorage.setItem(dayLockKey(dateKey), 'true');
+    setLocalDayLock(dateKey, true);
     updateLockUI();
+    await saveDayLockToGAS(dateKey, true);
     showToast('この日を固定しました');
     loadEventsFromGAS(true);
     loadDiaryForDate(dateKey);

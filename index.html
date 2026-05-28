@@ -173,6 +173,14 @@
   }
   .category-btn .icon { font-size: 22px; }
   .category-btn.selected { border-color: var(--accent); background: #fff5ee; }
+  .category-btn:disabled,
+  .weather-btn:disabled,
+  .add-btn:disabled,
+  .event-delete:disabled,
+  .input-field:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   .category-btn[data-cat="breakfast"].selected { border-color: var(--yellow); background: #fffbf0; }
   .category-btn[data-cat="lunch"].selected { border-color: var(--yellow); background: #fffbf0; }
   .category-btn[data-cat="dinner"].selected { border-color: var(--yellow); background: #fffbf0; }
@@ -332,6 +340,7 @@
     letter-spacing: 0.05em;
   }
   .add-btn:active { transform: scale(0.98); }
+  .add-btn:active:disabled { transform: none; }
 
   /* EVENT LIST */
   .event-list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
@@ -451,6 +460,39 @@
     cursor: not-allowed;
   }
   .generate-btn:active:not(:disabled) { transform: scale(0.98); }
+
+  .day-lock-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+  .day-lock-btn {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--warm);
+    color: var(--brown-dark);
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .day-lock-btn.locked {
+    background: var(--brown-dark);
+    color: var(--cream);
+  }
+  .day-lock-status {
+    flex: 1;
+    color: var(--text-light);
+    font-size: 12px;
+    line-height: 1.5;
+  }
 
   .diary-output {
     background: white;
@@ -851,7 +893,7 @@
     <textarea class="input-field" id="memoInput" placeholder="例：公園でお砂遊びをしました。楽しそうでした。"></textarea>
   </div>
 
-  <button class="add-btn" onclick="addEvent()">＋ 記録する</button>
+  <button class="add-btn" onclick="addEvent()" id="addEventBtn">＋ 記録する</button>
 </div>
 
 <!-- 一覧画面 -->
@@ -880,6 +922,11 @@
   <button class="generate-btn" onclick="generateDiary()" id="generateBtn">
     ✨ 今日の日記を生成する
   </button>
+
+  <div class="day-lock-bar">
+    <button class="day-lock-btn" onclick="toggleDayLock()" id="dayLockBtn">🔒 固定する</button>
+    <div class="day-lock-status" id="dayLockStatus">固定すると、この日の記録と日記生成を止めます。</div>
+  </div>
 
   <div class="diary-output" id="diaryOutput">
     <div class="diary-output-title">
@@ -957,8 +1004,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyeD0h0Ijwib9wRgGjTsXF_7tcJkimZ3Xz_KfY5Te1AfoPGUMMHLhheCdqB--fpa1k/exec';
-  const GAS_PASSWORD = 'Sosuke2024';
+  let GAS_URL = 'https://script.google.com/macros/s/AKfycbyeD0h0Ijwib9wRgGjTsXF_7tcJkimZ3Xz_KfY5Te1AfoPGUMMHLhheCdqB--fpa1k/exec';
+  let GAS_PASSWORD = 'Sosuke2024';
   let events = [];
   let isSyncing = false;
   let syncQueue = JSON.parse(localStorage.getItem('hoiku_sync_queue') || '[]');
@@ -980,11 +1027,13 @@
     play:'cat-play', bath:'cat-play', poop:'cat-health', temp:'cat-health', other:'cat-other'
   };
   let selectedWeather = null;
+  let isDayLocked = false;
 
   // 初期化
   let currentPickerTarget = 'start';
 
   function openTimePicker(target) {
+    if (isDayLocked) { showToast('固定中です。変更するには「変更する」を押してください'); return; }
     currentPickerTarget = target;
     const title = document.getElementById('timePickerTitle');
     title.textContent = target === 'start' ? '開始時間を入力' : '終了時間を入力';
@@ -1112,6 +1161,7 @@
   function selectDate(year, month, day) {
     currentDate = new Date(year, month, day);
     updateDateDisplay();
+    updateLockUI();
     // 天気の復元
     document.querySelectorAll('.weather-btn').forEach(b => b.classList.remove('selected'));
     selectedWeather = null;
@@ -1122,7 +1172,7 @@
       if (wBtn) wBtn.classList.add('selected');
     }
     closeDatePicker();
-    loadEventsFromGAS();
+    loadEventsFromGAS(isDayLocked);
     // 日記の読み込み（ローカル優先→GASから取得）
     loadDiaryForDate(toDateKey(currentDate));
   }
@@ -1135,21 +1185,23 @@
     const diaryOutput = document.getElementById('diaryOutput');
     const diaryTextEl = document.getElementById('diaryText');
     const timeline = document.getElementById('diaryTimeline');
+    const locked = isDayLockedForDate(dateKey);
 
-    // まずローカルから表示
-    const savedDiary = localStorage.getItem('hoiku_diary_' + dateKey);
-    if (savedDiary) {
-      try {
-        const { text, timeline: tl } = JSON.parse(savedDiary);
-        renderDiaryDisplay(text, tl);
-        return;
-      } catch(e) {}
+    // 固定中はGASの保存済みデータだけを表示する
+    if (!locked) {
+      const savedDiary = localStorage.getItem('hoiku_diary_' + dateKey);
+      if (savedDiary) {
+        try {
+          const { text, timeline: tl } = JSON.parse(savedDiary);
+          renderDiaryDisplay(text, tl);
+          return;
+        } catch(e) {}
+      }
     }
 
-    // ローカルになければGASから取得
     const gasData = await loadDiaryFromGAS(dateKey);
     if (gasData) {
-      localStorage.setItem('hoiku_diary_' + dateKey, JSON.stringify(gasData));
+      if (!locked) localStorage.setItem('hoiku_diary_' + dateKey, JSON.stringify(gasData));
       renderDiaryDisplay(gasData.text, gasData.timeline);
     } else {
       diaryTextEl.textContent = '';
@@ -1164,6 +1216,7 @@
     const timeline = document.getElementById('diaryTimeline');
     diaryOutput.classList.add('visible');
     diaryTextEl.textContent = text;
+    timeline.innerHTML = '';
     if (timelineData && timelineData.length > 0) {
       timeline.innerHTML = timelineData.map(ev => {
         const timeStr = (ev.start || '') + (ev.end ? '〜' + ev.end : '');
@@ -1179,10 +1232,11 @@
   }
 
   function selectWeather(btn) {
+    if (isDayLocked) { showToast('固定中です。変更するには「変更する」を押してください'); return; }
     document.querySelectorAll('.weather-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
     selectedWeather = btn.dataset.weather;
-    localStorage.setItem('hoiku_weather_' + toDateKey(new Date()), selectedWeather);
+    localStorage.setItem('hoiku_weather_' + toDateKey(currentDate), selectedWeather);
   }
 
   function init() {
@@ -1191,9 +1245,7 @@
 
     // 日付表示を更新
     updateDateDisplay();
-
-    // GASからイベントを読み込む
-    loadEventsFromGAS();
+    updateLockUI();
 
     const savedWeather = localStorage.getItem('hoiku_weather_' + toDateKey(now));
     if (savedWeather) {
@@ -1233,6 +1285,10 @@
     const savedTime = localStorage.getItem('hoiku_generate_time');
     if (savedTime) document.getElementById('generateTime').value = savedTime;
 
+    // 設定復元後にGASからイベント・日記を読み込む
+    loadEventsFromGAS(isDayLocked);
+    loadDiaryForDate(toDateKey(currentDate));
+
     renderEvents();
     checkAutoGenerate();
 
@@ -1255,6 +1311,68 @@
 
   function toDateKey(d) {
     return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+  }
+
+  function dayLockKey(dateKey = toDateKey(currentDate)) {
+    return 'hoiku_day_locked_' + dateKey;
+  }
+
+  function isDayLockedForDate(dateKey = toDateKey(currentDate)) {
+    return localStorage.getItem(dayLockKey(dateKey)) === 'true';
+  }
+
+  function updateLockUI() {
+    isDayLocked = isDayLockedForDate();
+    const lockBtn = document.getElementById('dayLockBtn');
+    const lockStatus = document.getElementById('dayLockStatus');
+    const generateBtn = document.getElementById('generateBtn');
+    const addBtn = document.getElementById('addEventBtn');
+    if (lockBtn) {
+      lockBtn.textContent = isDayLocked ? '✏️ 変更する' : '🔒 固定する';
+      lockBtn.classList.toggle('locked', isDayLocked);
+    }
+    if (lockStatus) {
+      lockStatus.textContent = isDayLocked
+        ? '固定中です。記録・天気・日記生成は停止し、日記はGASの保存済みデータだけを表示します。'
+        : '固定すると、この日の記録と日記生成を止めます。';
+    }
+    if (generateBtn) {
+      generateBtn.disabled = isDayLocked;
+      generateBtn.textContent = isDayLocked ? '🔒 固定中（変更で再生成）' : '✨ 今日の日記を生成する';
+    }
+    if (addBtn) addBtn.disabled = isDayLocked;
+    document.querySelectorAll('.category-btn, .weather-btn').forEach(btn => {
+      btn.disabled = isDayLocked;
+    });
+    ['startTimeDisplay', 'endTimeDisplay'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.pointerEvents = isDayLocked ? 'none' : '';
+    });
+    const memoInput = document.getElementById('memoInput');
+    if (memoInput) memoInput.disabled = isDayLocked;
+    renderEvents();
+  }
+
+  async function toggleDayLock() {
+    const dateKey = toDateKey(currentDate);
+    if (isDayLockedForDate(dateKey)) {
+      localStorage.removeItem(dayLockKey(dateKey));
+      updateLockUI();
+      showToast('編集できるようにしました');
+      return;
+    }
+
+    const diaryText = document.getElementById('diaryText').textContent.trim();
+    if (diaryText) {
+      const diaryData = { text: diaryText, timeline: events };
+      localStorage.setItem('hoiku_diary_' + dateKey, JSON.stringify(diaryData));
+      await saveDiaryToGAS(dateKey, diaryData);
+    }
+    localStorage.setItem(dayLockKey(dateKey), 'true');
+    updateLockUI();
+    showToast('この日を固定しました');
+    loadEventsFromGAS(true);
+    loadDiaryForDate(dateKey);
   }
 
   function saveEvents() {
@@ -1287,13 +1405,15 @@
     return s;
   }
 
-  async function loadEventsFromGAS() {
+  async function loadEventsFromGAS(forceGas = false) {
     if (!GAS_URL) { showToast('設定画面でGAS URLを入力してください'); return; }
     showSync('読み込み中');
     const dateKey = toDateKey(currentDate);
+    const directFromGas = forceGas || isDayLockedForDate(dateKey);
     // まずローカルから表示
     const saved = localStorage.getItem('hoiku_events_' + dateKey);
-    if (saved) { events = JSON.parse(saved); renderEvents(); }
+    if (directFromGas) { events = []; renderEvents(); }
+    if (saved && !directFromGas) { events = JSON.parse(saved); renderEvents(); }
     try {
       const res = await fetch(GAS_URL, {
         method: 'POST',
@@ -1307,7 +1427,7 @@
           end:   formatTime(ev.end),
           memo:  String(ev.memo || '')
         })).sort((a,b) => a.start.localeCompare(b.start));
-        saveEvents();
+        if (!directFromGas) saveEvents();
         renderEvents();
         hideSync();
       }
@@ -1367,6 +1487,7 @@
   }
 
   async function saveEventToGAS(ev) {
+    if (isDayLocked) return;
     showSync('保存中');
     const dateKey = toDateKey(currentDate);
     const task = { action: 'save', event: { ...ev, date: dateKey }, password: GAS_PASSWORD };
@@ -1382,6 +1503,7 @@
   }
 
   async function deleteEventFromGAS(id) {
+    if (isDayLocked) return;
     showSync('削除中');
     const task = { action: 'delete', id: String(id), password: GAS_PASSWORD };
     try {
@@ -1455,12 +1577,14 @@
   }
 
   function selectCategory(btn) {
+    if (isDayLocked) { showToast('固定中です。変更するには「変更する」を押してください'); return; }
     document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
     selectedCategory = btn.dataset.cat;
   }
 
   function addEvent() {
+    if (isDayLocked) { showToast('固定中です。変更するには「変更する」を押してください'); return; }
     if (!selectedCategory) { showToast('カテゴリを選んでください'); return; }
     const start = document.getElementById('startTime').value;
     const end = document.getElementById('endTime').value;
@@ -1491,6 +1615,7 @@
   }
 
   function deleteEvent(id) {
+    if (isDayLocked) { showToast('固定中です。変更するには「変更する」を押してください'); return; }
     // ローカルから即座に削除して画面を更新
     events = events.filter(e => e.id !== id);
     saveEvents();
@@ -1516,12 +1641,17 @@
           </div>
           <div class="event-memo">${ev.memo}</div>
         </div>
-        <button class="event-delete" onclick="deleteEvent(${ev.id})">✕</button>
+        <button class="event-delete" onclick="deleteEvent(${ev.id})" ${isDayLocked ? 'disabled' : ''}>✕</button>
       </div>
     `).join('') + '</div>';
   }
 
   async function generateDiary() {
+    if (isDayLocked) {
+      showToast('固定中です。変更するには「変更する」を押してください');
+      loadDiaryForDate(toDateKey(currentDate));
+      return;
+    }
     if (!apiKey) { showToast('APIキーを設定してください'); switchTab('diary'); return; }
     if (events.length === 0) { showToast('記録がありません'); return; }
 
@@ -1626,6 +1756,7 @@ ${eventSummary}
       const current = `${hh}:${mm}`;
       const target = document.getElementById('generateTime').value;
       if (current === target && events.length > 0 && apiKey) {
+        if (isDayLockedForDate(toDateKey(now))) return;
         const lastAuto = localStorage.getItem('hoiku_last_auto');
         const todayKey = toDateKey(now);
         if (lastAuto !== todayKey) {

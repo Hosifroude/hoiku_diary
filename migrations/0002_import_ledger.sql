@@ -1,0 +1,4 @@
+CREATE TABLE import_ledger (
+  source_key TEXT PRIMARY KEY,
+  imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

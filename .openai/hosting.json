@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "build": { "command": "npm run build", "output_directory": "dist" },
+  "worker": "worker/src/index.ts",
+  "bindings": { "d1_databases": [{ "binding": "DB", "database_name": "hoiku-diary" }] }
+}

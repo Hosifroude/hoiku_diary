@@ -37,7 +37,7 @@ Sites / Worker には `FAMILY_INVITE_CODE`, `ANTHROPIC_API_KEY`, `SESSION_SECRET
 
 ### D1 マイグレーション
 
-適用順は `migrations/0001_initial.sql`, `migrations/0002_import_ledger.sql`, `migrations/0003_security_integrity.sql` です。D1 の適用履歴または運用台帳で一度だけ適用されたことを管理し、適用前に D1 のバックアップを取得してください。適用後は users/events/diaries/day_locks/import_ledger の件数、`sessions_expires_idx`、`users_active_slot_unique`、固定日ガードトリガーの存在を確認します。ロールバックはバックアップからの復元を基本とし、本番 DB に直接破壊的変更を加えないでください。
+適用順は `migrations/0001_initial.sql`, `migrations/0002_import_ledger.sql`, `migrations/0003_security_integrity.sql`, `migrations/0004_fix_event_time_triggers.sql` です。D1 の適用履歴または運用台帳で一度だけ適用されたことを管理し、適用前に D1 のバックアップを取得してください。適用後は users/events/diaries/day_locks/import_ledger の件数、`sessions_expires_idx`、`users_active_slot_unique`、固定日ガードトリガーの存在を確認します。PR #3 は未マージですが、0003 の時刻検証誤りを未適用環境向けに直接修正し、既に0003を試験適用した環境でも上書きできるよう0004で該当トリガーを再作成します。ロールバックはバックアップからの復元を基本とし、本番 DB に直接破壊的変更を加えないでください。
 
 ### 初回登録と 2 アカウント制限
 

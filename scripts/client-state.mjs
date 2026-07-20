@@ -12,11 +12,11 @@ export function compactQueue(queue, task) {
   if (!duplicate) next.push(task);
   return { queue: next, queued: true };
 }
-export function mergePendingEvents(serverEvents, queue) {
+export function mergePendingEvents(serverEvents, queue, targetDate) {
   let merged = [...serverEvents];
   for (const task of queue) {
-    if (task.action === 'save' && task.event && !merged.some(e => e.id === task.event.id)) merged.push(task.event);
-    if (task.action === 'delete') merged = merged.filter(e => e.id !== task.id);
+    if (task.action === 'save' && task.event?.date === targetDate && !merged.some(e => e.id === task.event.id)) merged.push(task.event);
+    if (task.action === 'delete' && task.date === targetDate) merged = merged.filter(e => e.id !== task.id);
   }
   return merged;
 }

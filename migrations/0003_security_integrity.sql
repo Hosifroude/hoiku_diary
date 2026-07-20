@@ -1,0 +1,21 @@
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS account_slots (slot INTEGER PRIMARY KEY CHECK(slot IN (1,2)));
+INSERT OR IGNORE INTO account_slots(slot) VALUES (1),(2);
+ALTER TABLE users ADD COLUMN active_slot INTEGER REFERENCES account_slots(slot);
+CREATE UNIQUE INDEX IF NOT EXISTS users_active_slot_unique ON users(active_slot) WHERE disabled_at IS NULL;
+CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS rate_limits_window_idx ON rate_limits(window_started_at);
+CREATE INDEX IF NOT EXISTS day_locks_locked_idx ON day_locks(locked, date);
+CREATE INDEX IF NOT EXISTS events_created_by_idx ON events(created_by, date);
+CREATE TRIGGER IF NOT EXISTS events_category_allowed_insert BEFORE INSERT ON events BEGIN
+  SELECT CASE WHEN NEW.category NOT IN ('breakfast','lunch','dinner','snack','wakeup','nap','bedtime','play','bath','poop','temp','other') THEN RAISE(ABORT,'invalid category') END;
+  SELECT CASE WHEN NEW.start_time NOT GLOB '[0-2][0-9]:[0-5][0-9]' THEN RAISE(ABORT,'invalid start_time') END;
+END;
+CREATE TRIGGER IF NOT EXISTS events_category_allowed_update BEFORE UPDATE ON events BEGIN
+  SELECT CASE WHEN NEW.category NOT IN ('breakfast','lunch','dinner','snack','wakeup','nap','bedtime','play','bath','poop','temp','other') THEN RAISE(ABORT,'invalid category') END;
+END;
+CREATE TRIGGER IF NOT EXISTS events_locked_guard_insert BEFORE INSERT ON events WHEN EXISTS (SELECT 1 FROM day_locks WHERE date=NEW.date AND locked=1) BEGIN SELECT RAISE(ABORT,'day locked'); END;
+CREATE TRIGGER IF NOT EXISTS events_locked_guard_update BEFORE UPDATE ON events WHEN EXISTS (SELECT 1 FROM day_locks WHERE date=NEW.date AND locked=1) BEGIN SELECT RAISE(ABORT,'day locked'); END;
+CREATE TRIGGER IF NOT EXISTS events_locked_guard_delete BEFORE DELETE ON events WHEN EXISTS (SELECT 1 FROM day_locks WHERE date=OLD.date AND locked=1) BEGIN SELECT RAISE(ABORT,'day locked'); END;
+CREATE TRIGGER IF NOT EXISTS diaries_locked_guard_insert BEFORE INSERT ON diaries WHEN EXISTS (SELECT 1 FROM day_locks WHERE date=NEW.date AND locked=1) BEGIN SELECT RAISE(ABORT,'day locked'); END;
+CREATE TRIGGER IF NOT EXISTS diaries_locked_guard_update BEFORE UPDATE ON diaries WHEN EXISTS (SELECT 1 FROM day_locks WHERE date=NEW.date AND locked=1) BEGIN SELECT RAISE(ABORT,'day locked'); END;

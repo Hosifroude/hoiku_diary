@@ -12,6 +12,12 @@ test('client uses safe DOM rendering and keeps mobile pickers', async () => {
   assert.match(html, /replaceChildren/);
   assert.match(html, /timePickerOverlay/);
   assert.match(html, /datePickerOverlay/);
+  assert.match(html, /window\.copyDiary/);
+  assert.match(html, /window\.updateAge/);
+  assert.match(html, /restoreSettings/);
+  assert.match(html, /addEventListener\('online'/);
+  assert.match(html, /await refreshCurrentDateFromGAS\(\)/);
+  assert.match(html, /maybeAutoGenerate/);
   assert.doesNotMatch(html, /apiKeyInput|settingsGasUrl|settingsGasPassword|anthropic-dangerous-direct-browser-access|script\.google\.com/);
 });
 

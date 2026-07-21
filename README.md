@@ -4,7 +4,7 @@ GitHub をソースの正本とし、ChatGPT Sites の Cloudflare Workers 互換
 
 ## ローカル確認
 
-`npm run build` は静的クライアントを `dist/` に出力します。Worker の実行・D1 の適用は Sites/Workers の管理画面または対応 CLI で行い、`migrations/0001_initial.sql`、続いて `0002_import_ledger.sql` を適用してください。`npm test` は移行補助の形式チェックを実行します。
+`npm run build` は静的クライアントを `dist/` に出力します。Worker の実行・D1 の適用は Sites/Workers の管理画面または対応 CLI で行い、`migrations/0001_initial.sql`、続いて `0002_import_ledger.sql` を適用してください。`npm test` は移行補助の形式チェックを実行します。D1トリガーのテストはNode.js組み込みの `node:sqlite` を使うため、開発・テストにはNode.js 22.5以上が必要です。
 
 ## Sites 公開前の設定
 

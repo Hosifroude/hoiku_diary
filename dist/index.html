@@ -911,14 +911,6 @@
 
 <!-- 日記画面 -->
 <div class="screen" id="screen-diary">
-  <div class="api-key-box" id="apiKeyBox">
-    <p>🔑 Claude APIキーを入力してください（初回のみ）</p>
-    <div class="api-key-row">
-      <input type="password" class="api-key-input" id="apiKeyInput" placeholder="sk-ant-...">
-      <button class="save-key-btn" onclick="saveApiKey()">保存</button>
-    </div>
-  </div>
-
   <button class="generate-btn" onclick="generateDiary()" id="generateBtn">
     ✨ 今日の日記を生成する
   </button>
@@ -965,24 +957,6 @@
       <input type="time" class="settings-input" id="generateTime" value="20:00" oninput="saveSettings()">
     </div>
   </div>
-  <div class="settings-section">
-    <div class="settings-section-title">APIキー</div>
-    <div class="settings-row">
-      <span class="settings-label">Claude APIキー</span>
-      <input type="password" class="settings-input" id="settingsApiKey" placeholder="sk-ant-..." oninput="saveSettings()">
-    </div>
-  </div>
-  <div class="settings-section">
-    <div class="settings-section-title">同期設定</div>
-    <div class="settings-row">
-      <span class="settings-label">GAS ID</span>
-      <input type="text" class="settings-input" id="settingsGasUrl" placeholder="AKfycb..." oninput="saveSettings()">
-    </div>
-    <div class="settings-row">
-      <span class="settings-label">同期パスワード</span>
-      <input type="password" class="settings-input" id="settingsGasPassword" placeholder="パスワード" oninput="saveSettings()">
-    </div>
-  </div>
 </div>
 
 <div class="date-picker-overlay" id="datePickerOverlay" onclick="closeDatePickerOverlay(event)">
@@ -1003,8 +977,6 @@
 
 <div class="toast" id="toast"></div>
 
-
-<!-- The server owns authentication and all secrets; this dialog only collects credentials. -->
 <div id="authGate" style="position:fixed;inset:0;z-index:2000;background:var(--cream);padding:32px 20px;display:none">
   <div style="max-width:390px;margin:10vh auto"><h1 class="header-title" style="background:var(--brown-dark);padding:16px;border-radius:16px">📒 ほいくにっき</h1><p id="authMessage" style="margin:20px 0">ログインしてください。</p>
   <input id="authLogin" class="input-field" autocomplete="username" placeholder="ログインID"><br><br><input id="authPassword" class="input-field" type="password" autocomplete="current-password" placeholder="パスワード（12文字以上）"><br><br>
@@ -1014,39 +986,64 @@
 <script>
 (() => {
   const api = async (path, options = {}) => { const r = await fetch('/api/' + path, { credentials:'same-origin', headers:{'content-type':'application/json', ...(options.headers||{})}, ...options }); const data = await r.json().catch(()=>({})); if (!r.ok) throw Object.assign(new Error(data.error || '通信に失敗しました。'), { status:r.status }); return data; };
-  let registering = false, events = [], selectedCategory = null, selectedWeather = null, isDayLocked = false, currentDate = new Date(), syncQueue = JSON.parse(localStorage.getItem('hoiku_sync_queue') || '[]');
+  let syncQueue = [];
+  try { syncQueue = JSON.parse(localStorage.getItem('hoiku_sync_queue') || '[]'); if (!Array.isArray(syncQueue)) syncQueue = []; } catch { localStorage.removeItem('hoiku_sync_queue'); }
+  let registering = false, events = [], selectedCategory = null, selectedWeather = null, isDayLocked = false, currentDate = new Date();
   const catLabels={breakfast:'朝ごはん',lunch:'昼ごはん',dinner:'夜ごはん',snack:'おやつ',wakeup:'起床',nap:'昼寝',bedtime:'就寝',play:'遊び・活動',bath:'お風呂',poop:'うんち',temp:'体温',other:'その他'}, catIcons={breakfast:'🌅',lunch:'🍜',dinner:'🍚',snack:'🍪',wakeup:'☀️',nap:'😴',bedtime:'🌙',play:'🎠',bath:'🛁',poop:'💩',temp:'🌡️',other:'📌'};
   const toDateKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   window.showToast=m=>{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);};
   window.selectCategory=b=>{if(isDayLocked)return;document.querySelectorAll('.category-btn').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');selectedCategory=b.dataset.cat;};
-  window.renderEvents=()=>{const c=document.getElementById('eventList');c.innerHTML=events.length?`<div class="event-list">${events.map(e=>`<div class="event-card"><span class="event-icon">${catIcons[e.category]||'📌'}</span><div class="event-body"><b>${catLabels[e.category]||e.category}</b><div>${e.start}${e.end?'〜'+e.end:''}</div><small></small></div>${isDayLocked?'':`<button class="event-delete" data-id="${e.id}">削除</button>`}</div>`).join('')}</div>`:'<div class="empty-state"><div class="big">📝</div><p>まだ記録がありません。</p></div>';c.querySelectorAll('.event-delete').forEach(b=>b.onclick=()=>window.deleteEvent(b.dataset.id));};
-  window.updateLockUI=()=>{const b=document.getElementById('dayLockBtn');b.textContent=isDayLocked?'✏️ 変更する':'🔒 固定する';document.getElementById('dayLockStatus').textContent=isDayLocked?'固定中です。':'固定すると、この日の記録と日記生成を止めます。';document.getElementById('generateBtn').disabled=isDayLocked;};
-  window.renderDiaryDisplay=(text,timeline)=>{document.getElementById('diaryOutput').classList.add('visible');document.getElementById('diaryText').textContent=text;document.getElementById('diaryTimeline').innerHTML=(timeline||[]).map(e=>`<div class="diary-timeline-item">${e.start||e.start_time||''}　${catLabels[e.category]||e.category} ${e.memo||''}</div>`).join('');};
-  window.queueTask=t=>{if(!syncQueue.some(x=>JSON.stringify(x)===JSON.stringify(t)))syncQueue.push(t);localStorage.setItem('hoiku_sync_queue',JSON.stringify(syncQueue));}; window.removeQueuedTask=t=>{syncQueue=syncQueue.filter(x=>JSON.stringify(x)!==JSON.stringify(t));localStorage.setItem('hoiku_sync_queue',JSON.stringify(syncQueue));};
-  window.openTimePicker=target=>{if(isDayLocked)return;const value=prompt(target==='start'?'開始時間（HH:MM）':'終了時間（HH:MM）',document.getElementById(target==='start'?'startTime':'endTime').value);if(value&&/^([01]\\d|2[0-3]):[0-5]\\d$/.test(value)){const id=target==='start'?'start':'end';document.getElementById(id+'Time').value=value;const display=document.getElementById(id+'TimeDisplay');display.textContent=value;display.classList.remove('empty');}};
-  window.openDatePicker=()=>{const value=prompt('日付（YYYY-MM-DD）',toDateKey(currentDate));if(value&&/^\\d{4}-\\d{2}-\\d{2}$/.test(value)&&value<=toDateKey(new Date())){currentDate=new Date(value+'T00:00:00');window.updateDateDisplay();window.refreshCurrentDateFromGAS();}};
+  const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
+  const emptyState=()=>{const box=el('div','empty-state');box.append(el('div','big','📝'),el('p',null,'まだ記録がありません。'));return box;};
+  window.renderEvents=()=>{const c=document.getElementById('eventList');c.replaceChildren();if(!events.length){c.append(emptyState());return;}const list=el('div','event-list');events.forEach(e=>{const card=el('div','event-card');card.append(el('span','event-icon',catIcons[e.category]||'📌'));const body=el('div','event-body');body.append(el('b',null,catLabels[e.category]||e.category),el('div',null,`${e.start||''}${e.end?'〜'+e.end:''}`),el('small',null,e.memo||''));card.append(body);if(!isDayLocked){const del=el('button','event-delete','削除');del.dataset.id=e.id;del.onclick=()=>window.deleteEvent(del.dataset.id);card.append(del);}list.append(card);});c.append(list);};
+  window.updateLockUI=()=>{const b=document.getElementById('dayLockBtn');b.textContent=isDayLocked?'✏️ 変更する':'🔒 固定する';document.getElementById('dayLockStatus').textContent=isDayLocked?'固定中です。':'固定すると、この日の記録と日記生成を止めます。';document.getElementById('generateBtn').disabled=isDayLocked;document.getElementById('addEventBtn').disabled=isDayLocked;document.getElementById('memoInput').disabled=isDayLocked;document.querySelectorAll('.category-btn,.weather-btn').forEach(x=>x.disabled=isDayLocked);['startTimeDisplay','endTimeDisplay'].forEach(id=>document.getElementById(id).style.pointerEvents=isDayLocked?'none':'');};
+  window.renderDiaryDisplay=(text,timeline)=>{document.getElementById('diaryOutput').classList.add('visible');document.getElementById('diaryText').textContent=text;const tl=document.getElementById('diaryTimeline');tl.replaceChildren();(timeline||[]).forEach(e=>tl.append(el('div','diary-timeline-item',`${e.start||e.start_time||''}　${catLabels[e.category]||e.category} ${e.memo||''}`)));};
+  window.copyDiary=async()=>{const timeline=[...document.querySelectorAll('.diary-timeline-item')].map(x=>x.textContent).join('\n'), diary=document.getElementById('diaryText').textContent, text=[timeline,diary].filter(Boolean).join('\n\n');try{await navigator.clipboard.writeText(text);showToast('コピーしました！');}catch{showToast('コピーできませんでした。');}};
+  const persistQueue=()=>localStorage.setItem('hoiku_sync_queue',JSON.stringify(syncQueue));
+  window.queueTask=t=>{if(t.password||t.apiKey||t.invite_code)return false; if(t.action==='delete'){const before=syncQueue.length;syncQueue=syncQueue.filter(x=>!(x.action==='save'&&x.event?.id===t.id)); if(syncQueue.length<before){persistQueue();return true;}} if(t.action==='save'&&!syncQueue.some(x=>x.action==='save'&&x.event?.id===t.event?.id))syncQueue.push(t); else if(t.action!=='save'&&!syncQueue.some(x=>JSON.stringify(x)===JSON.stringify(t)))syncQueue.push(t); persistQueue();return true;}; window.removeQueuedTask=t=>{syncQueue=syncQueue.filter(x=>JSON.stringify(x)!==JSON.stringify(t));persistQueue();};
+  const mergePendingEvents=(serverEvents,targetDate)=>{let merged=[...serverEvents];for(const task of syncQueue){if(task.action==='save'&&task.event?.date===targetDate&&!merged.some(e=>e.id===task.event.id))merged.push(task.event);if(task.action==='delete'&&task.date===targetDate)merged=merged.filter(e=>e.id!==task.id);}return merged;};
   window.updateDateDisplay=()=>{const label=currentDate.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});document.getElementById('headerDate').textContent='📅 '+label;document.getElementById('diaryDateLabel').textContent=label+'の日記';};
+
+  let timePickerTarget='start', calendarMonth=new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+  window.openTimePicker=target=>{if(isDayLocked)return;timePickerTarget=target;document.getElementById('timePickerTitle').textContent=target==='start'?'開始時間を入力':'終了時間を入力';const nowTime=document.getElementById(target==='start'?'startTime':'endTime').value||'12:00';const [h,m]=nowTime.split(':');document.getElementById('pickerHour').value=h;document.getElementById('pickerMinute').value=m;document.getElementById('timePickerOverlay').classList.add('show');};
+  window.setQuickTime=(h,m)=>{document.getElementById('pickerHour').value=String(h).padStart(2,'0');document.getElementById('pickerMinute').value=String(m).padStart(2,'0');};
+  window.setPickerNow=()=>{const d=new Date();setQuickTime(d.getHours(),Math.floor(d.getMinutes()/5)*5);};
+  window.confirmTime=()=>{const id=timePickerTarget==='start'?'start':'end', value=document.getElementById('pickerHour').value+':'+document.getElementById('pickerMinute').value;document.getElementById(id+'Time').value=value;const display=document.getElementById(id+'TimeDisplay');display.textContent=value;display.classList.remove('empty');closeTimePicker();};
+  window.closeTimePicker=e=>{if(!e||e.target.id==='timePickerOverlay'||e.target.classList.contains('cancel'))document.getElementById('timePickerOverlay').classList.remove('show');};
+  window.renderCalendar=()=>{const grid=document.getElementById('dateGrid');grid.replaceChildren();document.getElementById('dateNavLabel').textContent=calendarMonth.toLocaleDateString('ja-JP',{year:'numeric',month:'long'});const first=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth(),1), last=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+1,0), todayKey=toDateKey(new Date());for(let i=0;i<first.getDay();i++)grid.append(el('div','date-cell empty',''));for(let d=1;d<=last.getDate();d++){const b=el('button','date-cell',d), key=toDateKey(new Date(calendarMonth.getFullYear(),calendarMonth.getMonth(),d));if(key>todayKey){b.classList.add('future');b.disabled=true;}else b.onclick=()=>selectDate(calendarMonth.getFullYear(),calendarMonth.getMonth(),d);grid.append(b);}};
+  window.openDatePicker=()=>{calendarMonth=new Date(currentDate.getFullYear(),currentDate.getMonth(),1);renderCalendar();document.getElementById('datePickerOverlay').classList.add('show');};
+  window.closeDatePicker=()=>document.getElementById('datePickerOverlay').classList.remove('show'); window.closeDatePickerOverlay=e=>{if(e.target.id==='datePickerOverlay')closeDatePicker();};
+  window.changeMonth=d=>{calendarMonth=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+d,1);renderCalendar();};
+  window.selectDate=async(y,m,d)=>{const next=new Date(y,m,d);if(toDateKey(next)>toDateKey(new Date())){showToast('未来日は選択できません。');return false;}currentDate=next;updateDateDisplay();closeDatePicker();await refreshCurrentDateFromGAS();return true;}; window.selectToday=()=>selectDate(new Date().getFullYear(),new Date().getMonth(),new Date().getDate());
+  for(let h=0;h<24;h++)document.getElementById('pickerHour').append(el('option',null,String(h).padStart(2,'0')));for(let m=0;m<60;m+=5)document.getElementById('pickerMinute').append(el('option',null,String(m).padStart(2,'0')));
+
   window.switchTab=name=>{document.querySelectorAll('.screen,.tab').forEach(x=>x.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');document.getElementById('tab-'+name).classList.add('active');};
   window.updateDateDisplay();
   const gate = document.getElementById('authGate'), message = document.getElementById('authMessage');
   function authMode() { document.getElementById('authInvite').style.display = registering ? 'block' : 'none'; document.getElementById('authSubmit').textContent = registering ? '登録する' : 'ログイン'; document.getElementById('authToggle').textContent = registering ? 'ログインへ戻る' : '初回登録はこちら'; message.textContent = registering ? '招待コードを入力して、家族アカウントを登録します。' : 'ログインしてください。'; }
   document.getElementById('authToggle').onclick = () => { registering=!registering; authMode(); };
-  document.getElementById('authSubmit').onclick = async () => { try { const payload={login_id:document.getElementById('authLogin').value,password:document.getElementById('authPassword').value}; if(registering) payload.invite_code=document.getElementById('authInvite').value; await api('auth/'+(registering?'register':'login'),{method:'POST',body:JSON.stringify(payload)}); if(registering){registering=false;authMode();showToast('登録しました。ログインしてください。');}else{gate.style.display='none'; await refreshCurrentDateFromGAS(); processQueue();} } catch(e) { message.textContent=e.message; } };
-  async function requireLogin(){ try { await api('auth/me'); gate.style.display='none'; } catch { gate.style.display='block'; authMode(); } }
+  document.getElementById('authSubmit').onclick = async () => { try { const payload={login_id:document.getElementById('authLogin').value,password:document.getElementById('authPassword').value}; if(registering) payload.invite_code=document.getElementById('authInvite').value; await api('auth/'+(registering?'register':'login'),{method:'POST',body:JSON.stringify(payload)}); if(registering){registering=false;authMode();showToast('登録しました。ログインしてください。');}else{gate.style.display='none'; await refreshCurrentDateFromGAS(); await syncAndRefresh(); await maybeAutoGenerate();} } catch(e) { message.textContent=e.message; } };
+  async function requireLogin(){ try { await api('auth/me'); gate.style.display='none'; return true; } catch { gate.style.display='block'; authMode(); return false; } }
   window.saveSettings = function(){ localStorage.setItem('hoiku_child_name',document.getElementById('childName').value); localStorage.setItem('hoiku_child_birthday',document.getElementById('childBirthday').value); localStorage.setItem('hoiku_generate_time',document.getElementById('generateTime').value); };
-  document.getElementById('apiKeyBox').remove(); document.querySelectorAll('#screen-settings .settings-section').forEach(s=>{if(/APIキー|同期設定/.test(s.textContent))s.remove();});
+  window.updateAge=()=>{const value=document.getElementById('childBirthday').value,display=document.getElementById('childAgeDisplay');if(!value){display.textContent='—';return;}const birth=new Date(value+'T00:00:00'),today=new Date();if(Number.isNaN(birth.getTime())||birth>today){display.textContent='—';return;}let years=today.getFullYear()-birth.getFullYear(),months=today.getMonth()-birth.getMonth();if(today.getDate()<birth.getDate())months--;if(months<0){years--;months+=12;}display.textContent=years===0?`${months}ヶ月`:`${years}歳${months}ヶ月`;};
+  const restoreSettings=()=>{document.getElementById('childName').value=localStorage.getItem('hoiku_child_name')||'';document.getElementById('childBirthday').value=localStorage.getItem('hoiku_child_birthday')||'';document.getElementById('generateTime').value=localStorage.getItem('hoiku_generate_time')||'20:00';updateAge();};
   const logout=document.createElement('button');logout.className='add-btn';logout.style.marginTop='16px';logout.textContent='ログアウト';logout.onclick=async()=>{await api('auth/logout',{method:'POST'});gate.style.display='block';};document.getElementById('screen-settings').append(logout);
-  window.loadEventsFromGAS = async function(){ const data=await api('day?date='+encodeURIComponent(toDateKey(currentDate))); events=data.events||[]; isDayLocked=!!data.locked; selectedWeather=data.diary?.weather||null; document.querySelectorAll('.weather-btn').forEach(b=>b.classList.toggle('selected',b.dataset.weather===selectedWeather)); renderEvents(); updateLockUI(); if(data.diary?.text) renderDiaryDisplay(data.diary.text,JSON.parse(data.diary.timeline||'[]')); else document.getElementById('diaryOutput').classList.remove('visible'); };
+  window.loadEventsFromGAS = async function(){ const data=await api('day?date='+encodeURIComponent(toDateKey(currentDate))); events=mergePendingEvents(data.events||[],toDateKey(currentDate)); isDayLocked=!!data.locked; selectedWeather=data.diary?.weather||null; document.querySelectorAll('.weather-btn').forEach(b=>b.classList.toggle('selected',b.dataset.weather===selectedWeather)); renderEvents(); updateLockUI(); if(data.diary?.text) renderDiaryDisplay(data.diary.text,JSON.parse(data.diary.timeline||'[]')); else document.getElementById('diaryOutput').classList.remove('visible'); };
   window.refreshCurrentDateFromGAS = () => loadEventsFromGAS();
-  window.saveEventToGAS = async ev => { try { await api('events',{method:'POST',body:JSON.stringify(ev)}); } catch(e) { if(e.status===423) throw e; queueTask({action:'save',event:ev}); } };
-  window.deleteEventFromGAS = async id => { try { await api('events/'+encodeURIComponent(id),{method:'DELETE'}); } catch(e) { if(e.status===423) throw e; queueTask({action:'delete',id,date:toDateKey(currentDate)}); } };
-  window.addEvent = async function(){ if(isDayLocked)return showToast('固定中です。'); if(!selectedCategory)return showToast('カテゴリを選択してください'); const start=document.getElementById('startTime').value; if(!start)return showToast('開始時間を入力してください'); const ev={id:crypto.randomUUID(),date:toDateKey(currentDate),category:selectedCategory,start,end:document.getElementById('endTime').value,memo:document.getElementById('memoInput').value.trim()}; try { await saveEventToGAS(ev); events.push(ev); renderEvents(); document.getElementById('memoInput').value=''; }catch(e){showToast(e.message);} };
+  window.saveEventToGAS = async ev => { try { await api('events',{method:'POST',body:JSON.stringify(ev)}); return {queued:false}; } catch(e) { if(!e.status||e.status===401){if(queueTask({action:'save',event:ev})){showToast(e.status===401?'再ログイン後に同期します。':'オフラインのため後で同期します。'); if(e.status===401)gate.style.display='block'; return {queued:true};}} else if(e.status===423) showToast('固定日のため再送しません。'); throw e; } };
+  window.deleteEventFromGAS = async id => { try { await api('events/'+encodeURIComponent(id),{method:'DELETE'}); return {queued:false}; } catch(e) { if(!e.status||e.status===401){if(queueTask({action:'delete',id,date:toDateKey(currentDate)})){showToast(e.status===401?'再ログイン後に同期します。':'オフラインのため後で同期します。'); if(e.status===401)gate.style.display='block'; return {queued:true};}} else if(e.status===423) showToast('固定日のため再送しません。'); throw e; } };
+  window.addEvent = async function(){ if(isDayLocked)return showToast('固定中です。'); if(!selectedCategory)return showToast('カテゴリを選択してください'); const start=document.getElementById('startTime').value; if(!start)return showToast('開始時間を入力してください'); const ev={id:crypto.randomUUID(),date:toDateKey(currentDate),category:selectedCategory,start,end:document.getElementById('endTime').value,memo:document.getElementById('memoInput').value.trim()}; try { await saveEventToGAS(ev); if(!events.some(e=>e.id===ev.id))events.push(ev); renderEvents(); document.getElementById('memoInput').value='';document.getElementById('startTime').value='';document.getElementById('endTime').value='';for(const id of ['start','end']){const display=document.getElementById(id+'TimeDisplay');display.textContent='タップして入力';display.classList.add('empty');}selectedCategory=null;document.querySelectorAll('.category-btn').forEach(x=>x.classList.remove('selected')); }catch(e){showToast(e.message);} };
   window.deleteEvent = async function(id){ if(isDayLocked)return showToast('固定中です。'); try{await deleteEventFromGAS(id);events=events.filter(e=>e.id!==id);renderEvents();}catch(e){showToast(e.message);} };
   window.selectWeather = async function(btn){ if(isDayLocked)return showToast('固定中です。'); try { selectedWeather=btn.dataset.weather; await api('weather',{method:'PUT',body:JSON.stringify({date:toDateKey(currentDate),weather:selectedWeather})}); document.querySelectorAll('.weather-btn').forEach(b=>b.classList.toggle('selected',b===btn)); }catch(e){showToast(e.message);} };
   window.toggleDayLock = async function(){ try { await api('locks',{method:'PUT',body:JSON.stringify({date:toDateKey(currentDate),locked:!isDayLocked})}); isDayLocked=!isDayLocked;updateLockUI(); }catch(e){showToast(e.message);} };
-  window.generateDiary = async function(){ if(isDayLocked)return showToast('固定中です。'); const btn=document.getElementById('generateBtn');btn.disabled=true;try{const d=await api('diaries/generate',{method:'POST',body:JSON.stringify({date:toDateKey(currentDate)})});renderDiaryDisplay(d.text,d.timeline); }catch(e){showToast(e.message);}finally{btn.disabled=false;} };
-  window.processQueue = async function(){ if(!navigator.onLine)return; const queued=[...syncQueue]; for(const task of queued){try{if(task.action==='save')await api('events',{method:'POST',body:JSON.stringify(task.event)});else if(task.action==='delete')await api('events/'+encodeURIComponent(task.id),{method:'DELETE'});removeQueuedTask(task);}catch(e){if(e.status===423)showToast('固定日に送信できない操作が残っています。');break;}} };
-  requireLogin();
+  window.generateDiary = async function(){ if(isDayLocked){showToast('固定中です。');return false;} const btn=document.getElementById('generateBtn');btn.disabled=true;try{const d=await api('diaries/generate',{method:'POST',body:JSON.stringify({date:toDateKey(currentDate),child_name:document.getElementById('childName').value,age:document.getElementById('childAgeDisplay').textContent})});renderDiaryDisplay(d.text,d.timeline);return true;}catch(e){showToast(e.message);return false;}finally{btn.disabled=isDayLocked;} };
+  window.processQueue = async function(){ if(!navigator.onLine)return false;let changed=false; const queued=[...syncQueue]; for(const task of queued){try{if(task.action==='save')await api('events',{method:'POST',body:JSON.stringify(task.event)});else if(task.action==='delete')await api('events/'+encodeURIComponent(task.id),{method:'DELETE'});removeQueuedTask(task);changed=true;}catch(e){if(e.status===401){showToast('再ログイン後に再送します。');gate.style.display='block';break;} if([400,403,409,423].includes(e.status)){removeQueuedTask(task);changed=true; if(e.status===423)showToast('固定日の操作は再送しません。'); continue;} break;}}return changed; };
+  const maybeAutoGenerate=async()=>{const now=new Date(),today=toDateKey(now),target=document.getElementById('generateTime').value;if(toDateKey(currentDate)!==today||isDayLocked||events.length===0||localStorage.getItem('hoiku_last_auto')===today)return;const current=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;if(current<target)return;if(await generateDiary())localStorage.setItem('hoiku_last_auto',today);};
+  const syncAndRefresh=async()=>{const changed=await processQueue();if(changed)await refreshCurrentDateFromGAS();};
+  window.addEventListener('online',async()=>{showToast('電波が回復しました');await syncAndRefresh();});
+  const initialize=async()=>{restoreSettings();const authenticated=await requireLogin();if(!authenticated)return;await refreshCurrentDateFromGAS();await syncAndRefresh();await maybeAutoGenerate();};
+  setInterval(maybeAutoGenerate,60000);
+  initialize();
 })();
 </script>
 </body>

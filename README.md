@@ -1,6 +1,6 @@
 # ほいくにっき（ChatGPT Sites 移行版）
 
-GitHub をソースの正本とし、ChatGPT Sites の Cloudflare Workers 互換サーバー、D1、将来用の R2 で運用する構成です。ブラウザは `/api` だけを呼び、Claude API と認証情報はサーバーの非公開ランタイム設定からのみ使用します。
+GitHub をソースの正本とし、ChatGPT Sites の Cloudflare Workers 互換サーバー、D1、将来用の R2 で運用する構成です。ブラウザは `/api` だけを呼び、OpenAI API と認証情報はサーバーの非公開ランタイム設定からのみ使用します。
 
 ## ローカル確認
 
@@ -11,9 +11,9 @@ GitHub をソースの正本とし、ChatGPT Sites の Cloudflare Workers 互換
 `.openai/hosting.json` の D1 論理バインディング `DB` を対象の D1 に結びます。公開前に次の**値を GitHub に保存せず**ランタイム秘密情報として設定します。
 
 * `FAMILY_INVITE_CODE` — 初回登録の家族用招待コード。
-* `ANTHROPIC_API_KEY` — Claude API キー。
+* `OPENAI_API_KEY` — OpenAI API キー。
 * `SESSION_SECRET` — 十分にランダムなセッション・トークン保護用秘密値。
-* `CLAUDE_MODEL` — 任意の非秘密設定（例: 使用する Claude モデル名）。
+* `OPENAI_MODEL` — 任意の非秘密設定。未設定時は `gpt-5.6-luna` を使用します。
 
 Sites でビルド設定を読み込み、D1 バインディングと上記設定を投入してからプレビューし、問題なければ Sites 側で公開します。このリポジトリからデプロイはしません。初回は各利用者が「初回登録」から別々の ID、12 文字以上のパスワード、招待コードを入れます。有効アカウントは 2 名までです。
 
@@ -29,11 +29,11 @@ Sites のプレビューで 2 台の端末のログイン、同期、固定、�
 
 ## Sites / D1 移行後の運用メモ
 
-GitHub リポジトリをソースコードの正本とし、Sites は `dist/index.html` を公開します。ブラウザには旧 GAS 資格情報、旧同期パスワード、Claude/Anthropic API キーを保存しません。Claude 呼び出しは Worker の `/api/diaries/generate` だけが `ANTHROPIC_API_KEY` を使って実行します。
+GitHub リポジトリをソースコードの正本とし、Sites は `dist/index.html` を公開します。ブラウザには旧 GAS 資格情報、旧同期パスワード、AI API キーを保存しません。OpenAI 呼び出しは Worker の `/api/diaries/generate` だけが `OPENAI_API_KEY` を使って実行します。
 
 ### 非公開ランタイム設定
 
-Sites / Worker には `FAMILY_INVITE_CODE`, `ANTHROPIC_API_KEY`, `SESSION_SECRET`, 任意の `CLAUDE_MODEL`, 必要に応じて `ALLOWED_ORIGINS` を秘密値として設定してください。これらを GitHub、PR 本文、ログ、公開 HTML に保存しないでください。
+Sites / Worker には `FAMILY_INVITE_CODE`, `OPENAI_API_KEY`, `SESSION_SECRET`, 任意の `OPENAI_MODEL`, 必要に応じて `ALLOWED_ORIGINS` を設定してください。`OPENAI_MODEL` の既定値は `gpt-5.6-luna` です。秘密値を GitHub、PR 本文、ログ、公開 HTML に保存しないでください。
 
 ### D1 マイグレーション
 

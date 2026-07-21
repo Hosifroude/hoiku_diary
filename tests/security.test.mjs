@@ -31,6 +31,11 @@ test('worker contains server-side validation and request protections', async () 
   assert.match(worker, /content-length/);
   assert.match(worker, /assertUnlocked\(env,d\)/);
   assert.match(worker, /created_by !== user\.id/);
+  assert.match(worker, /OPENAI_API_KEY/);
+  assert.match(worker, /OPENAI_MODEL\|\|'gpt-5\.6-luna'/);
+  assert.match(worker, /api\.openai\.com\/v1\/responses/);
+  assert.match(worker, /Bearer \$\{env\.OPENAI_API_KEY\}/);
+  assert.doesNotMatch(worker, /ANTHROPIC_API_KEY|CLAUDE_MODEL|api\.anthropic\.com/);
 });
 
 test('migration adds account slot uniqueness, indexes, category and lock guards', async () => {
